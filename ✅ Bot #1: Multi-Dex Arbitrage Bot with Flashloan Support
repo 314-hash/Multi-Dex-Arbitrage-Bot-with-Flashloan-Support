@@ -1,0 +1,80 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
+
+import "@aave/core-v3/contracts/flashloan/base/FlashLoanReceiverBase.sol";
+import "@aave/core-v3/contracts/interfaces/IPoolAddressesProvider.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+
+interface IUniswapRouter {
+    function swapExactTokensForTokens(
+        uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline
+    ) external returns (uint[] memory amounts);
+    
+    function getAmountsOut(uint amountIn, address[] calldata path) external view returns (uint[] memory amounts);
+}
+
+contract FlashArbBot is FlashLoanReceiverBase {
+    address public owner;
+    IUniswapRouter public dex1;
+    IUniswapRouter public dex2;
+    IUniswapRouter public dex3;
+
+    event Profit(uint256 profit, address token);
+    event FailedArbitrage();
+
+    constructor(address _provider, address _dex1, address _dex2, address _dex3)
+        FlashLoanReceiverBase(IPoolAddressesProvider(_provider))
+    {
+        owner = msg.sender;
+        dex1 = IUniswapRouter(_dex1);
+        dex2 = IUniswapRouter(_dex2);
+        dex3 = IUniswapRouter(_dex3);
+    }
+
+    modifier onlyOwner() {
+        require(msg.sender == owner, "Not owner");
+        _;
+    }
+
+    function executeOperation(
+        address[] calldata assets,
+        uint256[] calldata amounts,
+        uint256[] calldata premiums,
+        address initiator,
+        bytes calldata // params
+    ) external override returns (bool) {
+        address tokenIn = assets[0];
+        uint256 amount = amounts[0];
+
+        IERC20(tokenIn).approve(address(dex1), amount);
+        address ;
+        path[0] = tokenIn;
+        path[1] = address(0xTOKENB); // Replace with token B
+
+        uint[] memory amountsOut = dex1.swapExactTokensForTokens(amount, 1, path, address(this), block.timestamp);
+
+        // Repeat across dex2 and dex3 and swap back to tokenIn...
+
+        uint256 totalDebt = amount + premiums[0];
+        uint256 endBalance = IERC20(tokenIn).balanceOf(address(this));
+
+        require(endBalance > totalDebt, "No profit made");
+
+        IERC20(tokenIn).approve(address(POOL), totalDebt);
+        emit Profit(endBalance - totalDebt, tokenIn);
+        return true;
+    }
+
+    function startArbitrage(address token, uint256 amount) external onlyOwner {
+        address ;
+        assets[0] = token;
+
+        uint256 ;
+        amounts[0] = amount;
+
+        uint256 ;
+        modes[0] = 0; // No debt
+
+        POOL.flashLoan(address(this), assets, amounts, modes, address(this), "", 0);
+    }
+}
